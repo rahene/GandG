@@ -25,7 +25,7 @@ class RestockEmailObj(EmailObj):
         EmailObj.__init__(self, subject, sender, body, timestamp, email_vars.restock_order_type, person_name)
         buffer_item = self.get_order_info_item()
         self.order_info_dict = buffer_item[0]
-        self.order_info_item = buffer_item[1]
+        # self.order_info_item = buffer_item[1]
         self.item = self.get_restock_item()
 
 
@@ -70,7 +70,7 @@ class NewOrderEmailObj(EmailObj):
     def __init__(self, subject, sender, body, timestamp):
         person_name = self.get_person_name(body)
         EmailObj.__init__(self, subject, sender, body, timestamp, email_vars.new_order_type, person_name)
-        self.order_info_dict = self.get_order_info(body)
+        self.order_info_dict = self.get_order_info(body)    # keys = item, values = string containing color/size
         self.item_list = self.get_order_item_list()
 
     @staticmethod
