@@ -1,5 +1,4 @@
-import ConfigParser
-import smtplib
+import GetCSVItemInfo, g
 import datetime, time
 import imaplib
 import email
@@ -49,27 +48,30 @@ def sort_emails(test_time):
                     for response_part in data:
                         if isinstance(response_part, tuple):
                             msg = email.message_from_string(response_part[1])
-                            email_subject = msg['subject']
-                            email_from = msg['from']
 
-                            if email_subject:
-                                print 'Subject : {}'.format(email_subject)
+                            email_date_tuple = email.utils.parsedate_tz(msg['Date'])
+                            email_timestamp = datetime.datetime.fromtimestamp(
+                                email.utils.mktime_tz(email_date_tuple))
 
-                                subject_type, valid_subject = test_email_subject(email_subject)
-                                if valid_subject:
+                            valid_email_by_date = is_valid_email_by_date(email_timestamp, test_time)
+                            if valid_email_by_date:
 
-                                    for part in msg.walk():
-                                        # each part is a either non-multipart, or another multipart message
-                                        # that contains further parts... Message is organized like a tree
-                                        if part.get_content_type() == 'text/plain':
-                                            email_body = part.get_payload(decode=True)  # prints the raw text
+                                email_subject = msg['subject']
+                                email_from = msg['from']
 
-                                            email_date_tuple = email.utils.parsedate_tz(msg['Date'])
-                                            email_timestamp = datetime.datetime.fromtimestamp(
-                                                email.utils.mktime_tz(email_date_tuple))
+                                if email_subject:
+                                    print 'Subject : {}'.format(email_subject)
 
-                                            valid_email_by_date = is_valid_email_by_date(email_timestamp, test_time)
-                                            if valid_email_by_date:
+                                    subject_type, valid_subject = test_email_subject(email_subject)
+                                    if valid_subject:
+
+                                        for part in msg.walk():
+                                            # each part is a either non-multipart, or another multipart message
+                                            # that contains further parts... Message is organized like a tree
+                                            if part.get_content_type() == 'text/plain':
+                                                email_body = part.get_payload(decode=True)  # prints the raw text
+
+
                                                 if subject_type == email_vars.restock_order_type:
                                                     restock_request_count += 1
                                                     email_obj = EmailObjClasses.RestockEmailObj(email_subject,
@@ -88,13 +90,13 @@ def sort_emails(test_time):
                                                     raise AssertionError(
                                                         "Unknown subject type: {}".format(subject_type))
 
-                                                print "Restock email count: {}. New order count: {}".format(
-                                                    restock_request_count, new_order_count)
+                                                # print "Restock email count: {}. New order count: {}".format(
+                                                     # restock_request_count, new_order_count)
 
-                                            else:
-                                                print "Emails are now out of date. Break"
-                                                email_too_old = True
-                                                break
+                            else:
+                                print "Emails are now out of date. Break"
+                                email_too_old = True
+                                break
                 else:
                     print "Breaking out of email searching"
                     break
@@ -108,6 +110,9 @@ def sort_emails(test_time):
 
 
 def test_email_subject(subject):
+    if "900" in subject:
+        print "break"
+
     if any(x.lower() in subject.lower() for x in email_vars.valid_subject_list) and "Fwd: " not in subject:
         if email_vars.new_order_text.lower() in subject.lower():
             return email_vars.new_order_type, True
@@ -144,26 +149,39 @@ def is_valid_email_by_hours(email_date, hours_back):
 
 def is_valid_email_by_date(email_date, test_timestamp):
     # test_timestamp = convert_timestamp(test_timestamp_str)
-
     return (email_date >= test_timestamp)
 
 
 def get_order_summary(test_timestamp):
     total = float(0)
+    email_total = float(0)
+    csv_total = float(0)
+
+    email_vars.new_order_email_list.sort(key=lambda x: x.order_id)
+    g.new_order_csv_item_list.sort(key=lambda x: x.order_id)
+
     for email_item in email_vars.new_order_email_list:
         if email_item.timestamp >= test_timestamp:  # email item is after test timestamp
-            prev_line = ""
-            for line in email_item.body.split('\n'):
-                if line.strip() == '':
-                    continue
-                if "blog" in line and "$" in prev_line:
-                    current_order = float(prev_line.strip().split('$')[1])
-                    # print "Order total: {}".format(current_order)
-                    total = total + current_order
+            email_total = email_total + email_item.order_total
+            # print "*EMAIL* From order id {} add total {}".format(email_item.order_id, email_item.order_total)
+    print "Total from valid email orders: ${}".format(email_total)
 
-                prev_line = line
-    print "Total from valid orders: ${}".format(total)
+    for item in g.new_order_csv_item_list:
+        if item.timestamp >= test_timestamp:  # email item is after test timestamp
+            csv_total = csv_total + item.order_total
+            # print "*CSV* From order id {} add total {}".format(item.order_id, item.order_total)
+    print "Total from valid csv orders: ${}".format(csv_total)
+
+
+    for new_order_item in g.new_order_obj_list:
+        if new_order_item.timestamp >= test_timestamp:
+            total = total + float(new_order_item.order_total)
+    print "Total after adding all order items: {}".format(total)
+
+    print "Total after adding email items to csv items: {}".format(csv_total + email_total)
+
     return total
+
 
 def print_oldest_order_timestamp():
     t = None
@@ -278,52 +296,51 @@ def get_restock_email_list(restock_item_passed, restock_date, size_restock_input
     print "If restock request item ({}) was not in a new order by that person, send the restock notification email".format(
         restock_item_passed)
     send_restock_list = []
-    for restock_email in email_vars.restock_email_list:
+    for restock_item in g.restock_obj_list:
         skip_restock = False
-        if restock_email.item == restock_item_passed  and restock_email.timestamp >= restock_date and restock_email.order_info_dict[
-            "SIZE"] in size_restock_input and (color_restock_input and (restock_email.order_info_dict[
-            "COLOR"] in color_restock_input) or not color_restock_input):
-            for new_order_email in email_vars.new_order_email_list:
-                # print "Check if new order name '{}' matches restock email name '{}'".format(new_order_email.person_name, restock_email.person_name)
-                if new_order_email.person_name == restock_email.person_name and restock_email.item in new_order_email.item_list:
+        if restock_item.item == restock_item_passed and restock_item.timestamp >= restock_date and restock_item.size in size_restock_input and (
+                color_restock_input and (x for x in restock_item.color.lower() if x in color_restock_input.lower()) or not color_restock_input):
+            for new_order_item in g.new_order_obj_list:
+                # print "Check if new order name '{}' matches restock item name '{}'".format(new_order_item.person_name, restock_item.person_name)
+                if new_order_item.person_name == restock_item.person_name and restock_item.item in new_order_item.item_list:
                     print "{}, who requested a restock of {}, also has a new order with items {} that contains the restock item".format(
-                        restock_email.person_name, restock_item_passed, new_order_email.item_list)
+                        restock_item.person_name, restock_item_passed, new_order_item.item_list)
 
                     # new order after restock request, but order for a different color = add to list
-                    if new_order_email.timestamp > restock_email.timestamp and color_restock_input and not (
-                        restock_email.order_info_dict["COLOR"].lower() in [x.lower() for x in color_restock_input]):
+                    if new_order_item.timestamp > restock_item.timestamp and color_restock_input and not (
+                            x for x in restock_item.color.lower() if x in color_restock_input.lower()):
                         print "{} ordered {} on {}, after requesting a restock on {}, but the color requested ({}) was"\
                               " different than the color ordered ({}),"\
-                              " so send them a restock notification.".format(new_order_email.person_name,
-                                                                             new_order_email.item_list,
-                                                                             new_order_email.timestamp,
-                                                                             restock_email.timestamp,
-                                                                             restock_email.order_info_dict["COLOR"],
-                                                                             new_order_email.order_info_dict)
+                              " so send them a restock notification.".format(new_order_item.person_name,
+                                                                             new_order_item.item_list,
+                                                                             new_order_item.timestamp,
+                                                                             restock_item.timestamp,
+                                                                             restock_item.color,
+                                                                             new_order_item.order_info_dict)
                         skip_restock = False
                     # else if new order after restock request for same item, don't add to list
-                    elif new_order_email.timestamp > restock_email.timestamp:
+                    elif new_order_item.timestamp > restock_item.timestamp:
                         print "{} ordered {} on {}, after requesting a restock on {}, and there was either no color or " \
-                              "it was the same. Don't send a restock notification.".format(new_order_email.person_name,
-                                                                             new_order_email.item_list,
-                                                                             new_order_email.timestamp,
-                                                                             restock_email.timestamp,
-                                                                             restock_email.order_info_dict["COLOR"],
-                                                                             new_order_email.order_info_dict)
+                              "it was the same. Don't send a restock notification.".format(new_order_item.person_name,
+                                                                             new_order_item.item_list,
+                                                                             new_order_item.timestamp,
+                                                                             restock_item.timestamp,
+                                                                             restock_item.color,
+                                                                             new_order_item.order_info_dict)
                         skip_restock = True
                     # else (restock request is after the new order, add to list)
                     else:
                         print "{} ordered {} on {} before restock request on {}. Color info: {} Send notification "\
-                              "to this person.".format(new_order_email.person_name, new_order_email.item_list,
-                                                       new_order_email.timestamp, restock_email.timestamp,
-                                                       new_order_email.order_info_dict)
+                              "to this person.".format(new_order_item.person_name, new_order_item.item_list,
+                                                       new_order_item.timestamp, restock_item.timestamp,
+                                                       new_order_item.order_info_dict)
                         skip_restock = False
                         break
 
             if not skip_restock:
-                # print "Add {} to restock list. Name: {}".format(restock_email.order_info_dict["EMAIL"],
-                                                                # restock_email.person_name)
-                send_restock_list.append(restock_email.order_info_dict["EMAIL"])
+                # print "Add {} to restock list. Name: {}".format(restock_item.order_info_dict["item"],
+                                                                # restock_item.person_name)
+                send_restock_list.append(restock_item.email)
     print "\n\n\nCurrent restock email list: {}\n\n\n".format(', '.join(send_restock_list))
 
 
@@ -421,22 +438,44 @@ test_param = None
 try:
     if os.path.exists(pickle_file_path):
         test_param = pickle.load(open(pickle_file_path, 'rb'))
+
         if test_param:
             email_vars.restock_email_list = test_param[0]
             email_vars.new_order_email_list = test_param[1]
-            email_vars.latest_sort = test_param[2]
+            g.restock_csv_item_list = test_param[2]
+            g.new_order_csv_item_list = test_param[3]
+            email_vars.latest_sort = test_param[4]
 except EOFError:
     print "EOFError caught. Empty pickle file at: {}".format(pickle_file_path)
 
+# Populate the csv variables if they don't exist
+if not g.restock_csv_item_list:
+    print "Running script to get restocks from csv"
+    GetCSVItemInfo.add_restock_items_from_restocks_csv()     # restock items are in g.restock_obj_list
+    # latest restock item date is in g.latest_restock_from_csv
+if not g.new_order_csv_item_list:
+    print "Running script to get new orders from csv"
+    GetCSVItemInfo.add_new_order_items_from_orders_csv()     # new order items are in g.new_order_obj_list
+    # latest new order item date is in g.latest_order_from_csv
 if not email_vars.latest_sort:
-    email_vars.latest_sort = convert_timestamp("03/20/18 1:00 pm")
+    email_vars.latest_sort = min(g.latest_restock_from_csv, g.latest_order_from_csv)
 
+
+# Now populate the email variables
 assert sort_emails(email_vars.latest_sort), "Unable to sort emails properly"
 print "\n\n\t\t\t\t*****\n\n"
-
 email_vars.latest_sort = datetime.datetime.now()
-pObj = (email_vars.restock_email_list, email_vars.new_order_email_list, email_vars.latest_sort)
+
+
+# Dump all variables independently
+pObj = (email_vars.restock_email_list, email_vars.new_order_email_list, g.restock_csv_item_list, g.new_order_csv_item_list,
+        email_vars.latest_sort)
 test_param = pickle.dump(pObj, open(pickle_file_path, 'wb'))
+
+
+# Combine variables into one iterable variable
+g.restock_obj_list = email_vars.restock_email_list + g.restock_csv_item_list
+g.new_order_obj_list = email_vars.new_order_email_list + g.new_order_csv_item_list
 
 
 if script_type == 'export restock file':

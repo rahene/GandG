@@ -1,4 +1,5 @@
 import email_vars
+import re
 from collections import OrderedDict
 
 class OrderInfo:
@@ -26,11 +27,11 @@ class RestockEmailObj(EmailObj):
         buffer_item = self.get_order_info_item()
         self.order_info_dict = buffer_item[0]
         # self.order_info_item = buffer_item[1]
-        self.item = self.get_restock_item()
+        self.item = self.order_info_dict["ITEM"]
+        self.size = self.order_info_dict["SIZE"]
+        self.color = self.order_info_dict["COLOR"].split(',')
+        self.email = self.order_info_dict["EMAIL"]
 
-
-    def get_restock_item(self):
-        return self.order_info_dict["ITEM"]
 
     def get_order_info_item(self):
         results_dict = OrderedDict()
@@ -46,7 +47,20 @@ class RestockEmailObj(EmailObj):
                     break
         if not results_dict.has_key("COLOR"):
             results_dict["COLOR"] = ''
+
         results_dict["DATE"] = self.timestamp
+
+        if not results_dict.has_key("NAME") or not results_dict.has_key("EMAIL") \
+                or not results_dict.has_key("ITEM") or not results_dict.has_key("DATE"):
+            raise AssertionError(
+                "Failure in finding result item. Person name: {}. Timestamp: {}. Subject: {}".format(self.person_name,
+                                                                                                     self.timestamp,
+                                                                                                     self.subject))
+
+        if not results_dict.has_key("COLOR"):
+            results_dict["COLOR"] = None
+        if not results_dict.has_key("SIZE"):
+            results_dict["SIZE"] = None
         order_info_item = OrderInfo(results_dict["NAME"], results_dict["EMAIL"], results_dict["ITEM"],
                                     results_dict["SIZE"], results_dict["COLOR"], results_dict["DATE"])
         return results_dict, order_info_item
@@ -72,6 +86,25 @@ class NewOrderEmailObj(EmailObj):
         EmailObj.__init__(self, subject, sender, body, timestamp, email_vars.new_order_type, person_name)
         self.order_info_dict = self.get_order_info(body)    # keys = item, values = string containing color/size
         self.item_list = self.get_order_item_list()
+        self.order_total = self.get_order_total()
+        self.order_id = self.get_order_id()
+        print "Creating new order email obj. Subject: {}. Name: {}. Total: {}".format(subject, person_name, self.order_total)
+
+    def get_order_id(self):
+        return int(re.search(r'\((.*?)\)', self.subject).group(1))
+
+
+    def get_order_total(self):
+        prev_line = ""
+        for line in self.body.split('\n'):
+            if line.strip() == '':
+                continue
+            if "Discounts" in line and "$" in prev_line:
+                return float(prev_line.strip().split('$')[1])
+            if "blog" in line and "$" in prev_line:
+                return float(prev_line.strip().split('$')[1])
+
+            prev_line = line
 
     @staticmethod
     def get_order_info(email_body):
