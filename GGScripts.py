@@ -1,6 +1,7 @@
 import GetCSVItemInfo, g
 import datetime, time
 import imaplib
+import smtplib
 import email
 import csv
 import os, sys
@@ -22,6 +23,7 @@ SMTP_PORT = 993
 def sort_emails(test_time):
     print "Update stored info from emails. Last search: {}".format(test_time)
     try:
+        # mail = smtplib.SMTP_SSL(SMTP_SERVER)
         mail = imaplib.IMAP4_SSL(SMTP_SERVER)
         mail.login(FROM_EMAIL, FROM_PWD)
 

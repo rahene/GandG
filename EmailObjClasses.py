@@ -88,6 +88,10 @@ class NewOrderEmailObj(EmailObj):
         self.item_list = self.get_order_item_list()
         self.order_total = self.get_order_total()
         self.order_id = self.get_order_id()
+
+        if "hudson" in person_name:
+            print "break next"
+
         print "Creating new order email obj. Subject: {}. Name: {}. Total: {}".format(subject, person_name, self.order_total)
 
     def get_order_id(self):
@@ -117,17 +121,18 @@ class NewOrderEmailObj(EmailObj):
 
         return item_dict
 
-    @staticmethod
-    def get_person_name(email_body):
+    def get_person_name(self, email_body):
         billed_name = None
         shipped_name = None
         email_body_list = email_body.replace('\n', '').split('\r')
         for index, line in enumerate(email_body_list):
             if "BILLED TO" in line and "SHIPPING TO" in email_body_list[index + 1]:
                 billed_name = email_body_list[index + 2].strip()
-                if email_body_list[index + 9].strip().isdigit():
+                if self.is_phone_number(email_body_list[index + 9].strip()):
                     shipped_name = email_body_list[index + 10].strip()
-                elif email_body_list[index + 8].strip().isdigit():
+                elif self.is_phone_number(email_body_list[index + 8].strip()):
+                    shipped_name = email_body_list[index + 9].strip()
+                elif "@" in email_body_list[index + 8].strip():
                     shipped_name = email_body_list[index + 9].strip()
                 else:
                     shipped_name = email_body_list[index + 8].strip()
@@ -143,6 +148,17 @@ class NewOrderEmailObj(EmailObj):
 
         assert person_name, "No person name found for new order email object"
         return person_name.lower()
+
+    @staticmethod
+    def is_phone_number(str_input):
+        if str_input.isdigit() and len(str_input) == 10:
+            return True
+        elif (sum(c.isdigit() for c in str_input)) == 10:
+            return True
+        elif (str_input[0] == '+' or str_input[0] == '1') and (sum(c.isdigit() for c in str_input)) == 11:
+            return True
+        else:
+            return False
 
     def get_order_item_list(self):
         return self.order_info_dict.keys()
