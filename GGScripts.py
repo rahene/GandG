@@ -172,15 +172,19 @@ def get_order_summary(test_timestamp):
         if item.timestamp >= test_timestamp:  # email item is after test timestamp
             csv_total = csv_total + item.order_total
             # print "*CSV* From order id {} add total {}".format(item.order_id, item.order_total)
-    print "Total from valid csv orders: ${}".format(csv_total)
+    # # print "Total from valid csv orders: ${}".format(csv_total)
 
 
     for new_order_item in g.new_order_obj_list:
         if new_order_item.timestamp >= test_timestamp:
             total = total + float(new_order_item.order_total)
-    print "Total after adding all order items: {}".format(total)
 
-    print "Total after adding email items to csv items: {}".format(csv_total + email_total)
+    assert abs(total - (
+    csv_total + email_total)) < 5, "Something was off. The difference between the 'total' and 'email + csv total' " \
+                                   "was off my more than 5. Total: {}. Added total: {}".format(
+        total, csv_total + email_total)
+
+    print "\n\nTotal since {}: ${}\n\n".format(test_timestamp, total)
 
     return total
 
@@ -480,22 +484,22 @@ g.restock_obj_list = email_vars.restock_email_list + g.restock_csv_item_list
 g.new_order_obj_list = email_vars.new_order_email_list + g.new_order_csv_item_list
 
 
-if script_type == 'export restock file':
-    clear_prev_csv_results(restock_csv_path)
-    export_restock_requests(restock_csv_path)
-elif script_type == 'order summary':
-    test_date_timestamp = get_user_date_input(script_type)
-    get_order_summary(test_date_timestamp)
-    print_oldest_order_timestamp()
-elif script_type == 'send restock emails':
-    keep_going = True
+keep_going = True
+while keep_going:
 
-    while keep_going:
+    if script_type == 'export restock file':
+        clear_prev_csv_results(restock_csv_path)
+        export_restock_requests(restock_csv_path)
+    elif script_type == 'order summary':
+        test_date_timestamp = get_user_date_input(script_type)
+        get_order_summary(test_date_timestamp)
+    elif script_type == 'send restock emails':
+
         restock_item = get_user_digit_input("Input a single item that got restocked", input_option_list=get_all_restock_item_options())
         assert not type(restock_item) == list, "We are only allowing one restock item per loop"
 
         restock_date = get_user_date_input(script_name="restock request")
         call_restock_test_functions(restock_item, restock_date)
 
-        keep_going = get_user_digit_input("Are you finished with the restock item script?", input_option_list=["Yes", "No"])
-        keep_going = keep_going == "No"
+    keep_going = get_user_digit_input("Are you finished running this script?", input_option_list=["Yes", "No"])
+    keep_going = keep_going == "No"
