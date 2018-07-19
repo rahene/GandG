@@ -162,26 +162,35 @@ def get_order_summary(test_timestamp):
     email_vars.new_order_email_list.sort(key=lambda x: x.order_id)
     g.new_order_csv_item_list.sort(key=lambda x: x.order_id)
 
-    for email_item in email_vars.new_order_email_list:
-        if email_item.timestamp >= test_timestamp:  # email item is after test timestamp
-            email_total = email_total + email_item.order_total
-            # print "*EMAIL* From order id {} add total {}".format(email_item.order_id, email_item.order_total)
-    print "Total from valid email orders: ${}".format(email_total)
+    if type(test_timestamp) == datetime.datetime:
+        for email_item in email_vars.new_order_email_list:
+            if email_item.timestamp >= test_timestamp:  # email item is after test timestamp
+                email_total = email_total + email_item.order_total
 
-    for item in g.new_order_csv_item_list:
-        if item.timestamp >= test_timestamp:  # email item is after test timestamp
-            csv_total = csv_total + item.order_total
-            # print "*CSV* From order id {} add total {}".format(item.order_id, item.order_total)
-    # # print "Total from valid csv orders: ${}".format(csv_total)
+        for item in g.new_order_csv_item_list:
+            if item.timestamp >= test_timestamp:  # email item is after test timestamp
+                csv_total = csv_total + item.order_total
 
+        for new_order_item in g.new_order_obj_list:
+            if new_order_item.timestamp >= test_timestamp:
+                total = total + float(new_order_item.order_total)
+    elif type(test_timestamp) == list:
+        for email_item in email_vars.new_order_email_list:
+            if test_timestamp[0] <= email_item.timestamp <= test_timestamp[1]:
+                email_total = email_total + email_item.order_total
 
-    for new_order_item in g.new_order_obj_list:
-        if new_order_item.timestamp >= test_timestamp:
-            total = total + float(new_order_item.order_total)
+        for item in g.new_order_csv_item_list:
+            if test_timestamp[0] <= item.timestamp <= test_timestamp[1]:  # email item is after test timestamp
+                csv_total = csv_total + item.order_total
 
+        for new_order_item in g.new_order_obj_list:
+            if test_timestamp[0] <= new_order_item.timestamp <= test_timestamp[1]:
+                total = total + float(new_order_item.order_total)
+
+    # Make sure the total received from all 'new_order_items' matches the total received from (emails + csv items)
     assert abs(total - (
-    csv_total + email_total)) < 5, "Something was off. The difference between the 'total' and 'email + csv total' " \
-                                   "was off my more than 5. Total: {}. Added total: {}".format(
+        csv_total + email_total)) < 5, "Something was off. The difference between the 'total' and 'email + csv total' "\
+                                       "was off my more than 5. Total: {}. Added total: {}".format(
         total, csv_total + email_total)
 
     print "\n\nTotal since {}: ${}\n\n".format(test_timestamp, total)
@@ -244,20 +253,25 @@ def get_user_folder_path():
     return home
 
 
-def get_user_date_input(script_name):
+def get_user_date_input(prompt_text):
     x = 5
-    temp_timestamp = ""
     valid_input = False
     while not valid_input and x > 0:
-        test_date = raw_input("Run {} script. Search emails as far back as:\nUse format 'mm/dd/yy 8:00 pm'\n".format(script_name))
-        type(test_date)
+        begin_date = raw_input("{}\nUse format 'mm/dd/yy 8:00 pm'\n".format(prompt_text))
+        type(begin_date)
+        end_date = raw_input("Input ending date here (same format). If using through present time, "
+                             "just hit ENTER.\n".format(prompt_text))
+        type(end_date)
         try:
-            temp_timestamp = convert_timestamp(test_date)
+            begin_timestamp = convert_timestamp(begin_date)
             valid_input = True
+            if end_date != '':
+                end_timestamp = convert_timestamp(end_date)
+                return [begin_timestamp, end_timestamp]
+            return begin_timestamp
         except Exception as e:
             print "Dummy, use the right format please: {}".format(e.message)
             x -= 1
-    return temp_timestamp
 
 
 def get_user_digit_input(prompt_text, input_option_list):
@@ -491,14 +505,16 @@ while keep_going:
         clear_prev_csv_results(restock_csv_path)
         export_restock_requests(restock_csv_path)
     elif script_type == 'order summary':
-        test_date_timestamp = get_user_date_input(script_type)
-        get_order_summary(test_date_timestamp)
+        input_text = "Run order summary script. Use start date of:"
+        timestamp_range = get_user_date_input(input_text)
+        # If user wants a range of time, a list is returned
+        get_order_summary(timestamp_range)
     elif script_type == 'send restock emails':
 
         restock_item = get_user_digit_input("Input a single item that got restocked", input_option_list=get_all_restock_item_options())
         assert not type(restock_item) == list, "We are only allowing one restock item per loop"
 
-        restock_date = get_user_date_input(script_name="restock request")
+        restock_date = get_user_date_input(prompt_text="Run restock request script. Use start point:")
         call_restock_test_functions(restock_item, restock_date)
 
     keep_going = get_user_digit_input("Are you finished running this script?", input_option_list=["Yes", "No"])
